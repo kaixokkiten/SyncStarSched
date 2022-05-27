@@ -9,6 +9,7 @@
   "dependencies": {
     "googleapis": "^36.0.0",
     "moment": "^2.23.0",
+    "moment-timezone": "^0.5.34",
     "puppeteer": "^1.11.0"
   }
 }

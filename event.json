@@ -1,0 +1,24 @@
+{
+    "summary": "Starbucks [job_type]",
+    "location": "49 Church St #2072, Burlington, VT 05401",
+    "description": "[details]",
+    "start": {},
+    "end": {},
+    "reminders": {
+        "useDefault": false,
+        "overrides": [
+            {
+                "method": "popup",
+                "minutes": 120
+            },
+            {
+                "method": "popup",
+                "minutes": 40
+            },
+            {
+                "method": "popup",
+                "minutes": 15
+            }
+        ]
+    }
+}

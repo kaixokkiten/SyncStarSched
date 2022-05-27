@@ -4,11 +4,12 @@
         "https://www.googleapis.com/auth/calendar.events",
         "https://www.googleapis.com/auth/calendar"
     ],
+    "timeZone": "America/Los_Angeles",
     "paths" : {
         "token": "token.json",
         "creds": "credentials.json"
     },
     "urls": {
-        "starbucks": "https://mysite.starbucks.com/MySchedule/Schedule.aspx"
+        "starbucks": "https://starbucks-wfmr.jdadelivers.com/retail"
     }
 }

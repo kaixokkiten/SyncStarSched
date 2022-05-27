@@ -1,10 +1,10 @@
 const fs = require('fs');
 const readline = require('readline');
-const moment = require('moment');
 const { google } = require('googleapis');
 const puppeteer = require('puppeteer');
 const config = require('./config.json');
 const secrets = require('./secrets.json');
+const moment = require('moment-timezone');
 
 const colors = {
     Bright: "\x1b[1m"  + "%s" + "\x1b[0m",
@@ -17,27 +17,7 @@ const colors = {
     Blue:   "\x1b[34m" + "%s" + "\x1b[0m",
 };
 
-const defaultEvent = {  
-    'summary': 'Starbucks Shift',
-    'location': '49 Church St #2072, Burlington, VT 05401',
-    'description': `Automatically added from ${config.urls.starbucks}.`,
-    'start': {
-      'dateTime': '2019-01-01T12:00:00-05:00',
-      'timeZone': 'America/New_York'
-    },
-    'end': {
-      'dateTime': '2019-01-01T17:00:00-05:00',
-      'timeZone': 'America/New_York'
-    },
-    'reminders': {
-      'useDefault': false,
-      'overrides': [
-        {'method': 'popup', 'minutes': 60 * 4},
-        {'method': 'popup', 'minutes': 60},
-        {'method': 'popup', 'minutes': 15}
-      ]
-    }
-};
+const defaultEvent = JSON.parse(fs.readFileSync("./event.json"));
 
 // launch program with async iife
 (async () => {
@@ -62,6 +42,27 @@ async function scrapeStarbucks() {
     await page.waitForSelector("input.textbox")
     pageStatus = await getPageStatus(page);
 
+    // request interception is a funsier way to do this
+    let waitForData;
+    {
+      let _resolve = [];
+      let _data = [];
+      page.on('requestfinished', request => {
+        if (!request.url().match("/retail/data/wfmess/api/.*/mySchedules/")) return;
+        request.response().buffer().then(resp => {
+          console.log("downloaded");
+          if (_resolve.length) _resolve.shift()(resp);
+          else _data.push(resp);
+        });
+      });
+      waitForData = () => new Promise(resolve => {
+          console.log("requested");
+        if (_data.length) resolve(_data.shift());
+        else _resolve.push(resolve);
+      });
+    }
+
+
     // keep smashing buttons until we're on schedule page
     while (!pageStatus.schedulePage) {
      
@@ -84,70 +85,42 @@ async function scrapeStarbucks() {
 
         // wait for navigation and dom and check page
         await page.waitForNavigation({waitUntil: 'networkidle2'});
-        await page.waitForSelector("input.textbox,.scheduleShift")
+        await page.waitForSelector("input.textbox,.x-component")
         pageStatus = await getPageStatus(page);
     }
 
 
     // go hunting for info we want
-    var webShifts = await page.evaluate(() => {
+    const shifts = [];
+    while (true) {
+      const data = JSON.parse(await waitForData());
+      if (data.hasUnpostedShifts || data.netScheduledHours === 0) break;
+      for (const day of data.days) {
+        for (const pss of day.payScheduledShifts) {
+          shifts.push({
+            job_type: pss.job.name,
+            details: pss.scheduleDetails.map(d => d.detailType + ": " + d.start.split("T").pop() + " - " + d.end.split("T").pop()).join("\n"),
+            start: pss.start,
+            end: pss.end
+          });
+        }
+      }
 
-        // executes on client in browser
-        var shifts = $(".scheduleShift").map(function() {
-            var $this = $(this)
-            var $store = $this.find(".scheduleShiftStore");
-            var $time = $this.find(".scheduleShiftTime");
-            var day = $this.closest(".scheduleDayRight").find(".scheduleDayTitle").text().trim()
-            var storeLink = $store.attr("href")
-            var storeText = $store.text()
-            var storeNumber = storeText.split(",")[0].split("#")[1].trim()
-            var storeName = storeText.split(",").slice(1).join(",").trim()
-            var shiftText = $time.text().trim();
-            var shiftStart = shiftText.split("-")[0].trim()
-            var shiftEnd = shiftText.split("-")[1].trim()
+      // push next button
+      const frame = await (await page.waitForSelector(".x-component")).contentFrame();
+      await frame.waitForSelector("#button-1029-btnIconEl");
+      await frame.click("#button-1029-btnIconEl");
+    }
 
-            return {
-               storeNumber,
-               storeName,
-               day,
-               shiftStart,
-               shiftEnd,
-               storeLink
-            }
-
-         }).get();
-
-         return shifts;
-    })
-
-    // transform retrieved schedules
-    for (let i=0; i < webShifts.length; i++) {
-        const shift = webShifts[i];
-
-        // upcoming shift year is current execution year unless we're in dec and shift is in jan
-        shift.year = (new Date()).getFullYear()
-        if (new Date().getMonth() == 11 && shift.day.includes("Jan")) shift.year++
-
-        shift.startDateTime = `${shift.day.split(",")[1]} ${shift.year}, ${shift.shiftStart}`
-        shift.endDateTime = `${shift.day.split(",")[1]} ${shift.year}, ${shift.shiftEnd}`
-        shift.startMoment = moment(shift.startDateTime, "MMMM D YYYY, hh:mm A")
-        shift.endMoment = moment(shift.endDateTime, "MMMM D YYYY, hh:mm A")
-        shift.duration = moment.duration(shift.endMoment.diff(shift.startMoment));
-    }     
-
-
-    // log events for fun
-    console.log(colors.Yellow, `Retrieved ${webShifts.length} shift(s) from Starbucks:`)
-    webShifts.forEach(shift => {
-        console.log(shift.startMoment > moment() ? colors.Bright : colors.White,
-                    `Shift: ${shift.startMoment.format("ddd, MMM DD, hh:mma")} to ${shift.endMoment.format("hh:mma")}`.replace(/\ 0/g, '  '));
-    });
-    console.log("\r\n")
+    // log events for "fun"
+    console.log(colors.Green, "Downloaded shift(s):");
+    shifts.forEach(({job_type, details, start, end}) => console.log(job_type, start, end, JSON.stringify(details)));
+    console.log("\r\n");
 
     // Closing Time
     await browser.close();
 
-    return webShifts
+    return shifts
 }
 async function getPageStatus(myPage) {
     // determine what page we're on
@@ -156,7 +129,7 @@ async function getPageStatus(myPage) {
         const partner = document.querySelectorAll(".txtUserid")
         const passBox = document.querySelectorAll("input.tbxPassword")
         const secQuestion = document.querySelector(".bodytext.lblKBQ.lblKBQ1")
-        const schedule = document.querySelectorAll(".scheduleShift")
+        const schedule = document.querySelectorAll(".x-component")
 
         var status = {
             partnerPage: partner.length > 0,
@@ -239,8 +212,8 @@ async function getCalendarEvents(calendar) {
 
     // log events 
     console.log(colors.Yellow, `Retrieved ${upcomingEvents.length} upcoming calendar appointment(s):`)
-    upcomingEvents.forEach(event => {
-        console.log(`Event: ${moment(event.start.dateTime).format("ddd, MMM DD, hh:mma")} to ${moment(event.end.dateTime).format("hh:mma")}`.replace(/\ 0/g, '  '));
+    upcomingEvents.forEach(evt => {
+        console.log(`Event: ${moment(evt.start.dateTime).tz(evt.start.timeZone).format()} to ${moment(evt.end.dateTime).tz(evt.end.timeZone).format()}`.replace(/\ 0/g, '  '));
     });
     console.log("\r\n")
 
@@ -267,12 +240,12 @@ async function syncSchedule(calendar, schedule, upcomingEvents) {
         let shift = schedule[i];
 
         var matchedEvent = upcomingEvents.some(evt => {
-            return moment(evt.start.dateTime).format() == shift.startMoment.format() &&
-                   moment(evt.end.dateTime).format() == shift.endMoment.format()
+            return +moment(evt.start.dateTime) == +moment.tz(shift.start, config.timeZone) &&
+                   +moment(evt.end.dateTime) == +moment.tz(shift.end, config.timeZone);
         })
 
         shift.isNew = !matchedEvent
-        shift.inFuture = shift.startMoment > moment()
+        shift.inFuture = +moment.tz(shift.end, config.timeZone) > +moment()
         shift.shouldInsert = shift.isNew && shift.inFuture
     }
     
@@ -284,17 +257,20 @@ async function syncSchedule(calendar, schedule, upcomingEvents) {
         let shift = insertShifts[i];
 
         let insertShift = Object.assign({}, defaultEvent)
-        insertShift.start.dateTime = shift.startMoment.format()
-        insertShift.end.dateTime = shift.endMoment.format()
-        insertShift.summary = `(${shift.duration.asHours()}HR) Starbucks`
-        insertShift.location = `${shift.storeName} - #${shift.storeNumber}`
+        insertShift.start.dateTime = moment.tz(shift.start, config.timeZone).format()
+        insertShift.start.timeZone = config.timeZone
+        insertShift.end.dateTime = moment.tz(shift.end, config.timeZone).format()
+        insertShift.end.timeZone = config.timeZone
+        insertShift.summary = insertShift.summary.split("[job_type]").join(shift.job_type);
+        insertShift.description = insertShift.description.split("[details]").join(shift.details);
+        console.log(insertShift);
 
         let insertRes = await calendar.events.insert({
             calendarId: calendarId,
             requestBody: insertShift,
         })
 
-        console.log(`Inserted: ${shift.startMoment.format("ddd, MMM DD, hh:mma")} to ${shift.endMoment.format("hh:mma")}`.replace(/\ 0/g, '  '));
+        console.log(`Inserted: ${shift.start} to ${shift.end}`.replace(/\ 0/g, '  '));
         // todo - send update if requested
     }
     console.log("\r\n")
@@ -305,8 +281,8 @@ async function syncSchedule(calendar, schedule, upcomingEvents) {
         let evt = upcomingEvents[i];
         
         var matchedShift = schedule.some(shift => {
-            return moment(evt.start.dateTime).format() == shift.startMoment.format() &&
-                   moment(evt.end.dateTime).format() == shift.endMoment.format()
+            return +moment(evt.start.dateTime) == +moment.tz(shift.start, config.timeZone) &&
+                   +moment(evt.end.dateTime) == +moment.tz(shift.end, config.timeZone);
         })
 
         evt.shouldDelete = !matchedShift
@@ -324,7 +300,7 @@ async function syncSchedule(calendar, schedule, upcomingEvents) {
             eventId: evt.id,
         })
 
-        console.log(`Deleted: ${moment(evt.start.dateTime).format("ddd, MMM DD, hh:mma")} to ${moment(evt.end.dateTime).format("hh:mma")}`.replace(/\ 0/g, '  '));
+        console.log(`Deleted: ${moment.tz(evt.start.dateTime, evt.start.timeZone).format()} to ${moment.tz(evt.end.dateTime, evt.end.timeZone).format()}`.replace(/\ 0/g, '  '));
     }
 
 }
