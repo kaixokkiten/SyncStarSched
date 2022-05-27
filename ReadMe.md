@@ -1,13 +1,13 @@
-# Automated Bucks Cal
-
-Scrape Starbucks Shifts and Sync into Google Calendar
+# Scrape Starbucks Shifts and Populate into Google Calendar
 
 ## Setup
 
 1. Create [New Google Calendar](https://calendar.google.com/calendar/r/settings/createcalendar), named "Starbucks"
-  * For Funsies, change the color to  [`#067655`](https://brandpalettes.com/starbucks-coffee-color-codes/)
-  ![change color](https://i.imgur.com/oSiwndj.png)
-2. Run app and authorize with Google, click link in console, copy auth key, and a token will be automatically saved.
+  * For Funsies, change the color to  [`#067655`](https://brandpalettes.com/starbucks-coffee-color-codes/)!  
+   ![starbucks calendar color](https://user-images.githubusercontent.com/18796736/170651363-fc9ce286-2525-49bf-81a5-f659ceb48d6b.png).
+2. To run this in Google's cloud shell, open the [cloud shell](https://console.cloud.google.com/). 
+   ![open the cloud shell](https://user-images.githubusercontent.com/18796736/170654991-dbeeb33e-0f1e-480a-979c-744ae0a68651.png)
+3. 
 
 [NodeJs Calendar Quickstart](https://developers.google.com/calendar/quickstart/nodejs)
 
