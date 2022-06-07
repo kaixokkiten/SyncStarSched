@@ -21,7 +21,7 @@ npm install
 sudo apt-get install -y libxss1 libgtk-3-0 
 node .
 ```
-5.  Create your credentials. [https://console.cloud.google.com/apis/credentials]. Pick OAuth Client ID, (it might make you create an OAuth Consent Screen).
+5.  Create your [credentials](https://console.cloud.google.com/apis/credentials). Pick OAuth Client ID, (it might make you create an OAuth Consent Screen).
 ![its an OAuth thing](https://user-images.githubusercontent.com/18796736/171986064-f8fd7d21-04ab-4a48-a8b8-72712ee6110d.png)
  `credentials.json`
 
