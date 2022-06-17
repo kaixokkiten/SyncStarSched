@@ -69,6 +69,7 @@ npm install moment --save
 ## Run
 
 ```bash
+./syncstarsched.sh
 node .
 ```
 
